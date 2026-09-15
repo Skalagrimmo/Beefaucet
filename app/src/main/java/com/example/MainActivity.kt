@@ -49,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -56,6 +57,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.remote.RpcNetwork
 import com.example.ui.screens.CaptchaClaimScreen
@@ -268,34 +270,48 @@ fun MainAppContent(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            Crossfade(targetState = state.currentTab, label = "TabSwitch") { currentTab ->
-                when (currentTab) {
-                    "FAUCET" -> FaucetHomeScreen(
-                        state = state,
-                        onSelectFaucet = onSelectFaucet,
-                        onResetCooldown = onResetCooldown,
-                        onResetAllCooldowns = onResetAllCooldowns,
-                        onNavigateToWallet = onNavigateToWallet
-                    )
-                    "CLAIM" -> CaptchaClaimScreen(
-                        state = state,
-                        onClaimed = onUserClaimed,
-                        onNavigateToHome = { onSelectTab("FAUCET") }
-                    )
-                    "WALLET" -> WalletScreen(
-                        state = state,
-                        onUpdateAddress = onUpdateAddress,
-                        onSelectNetwork = onSelectNetwork,
-                        onRefreshBalance = onRefreshBalance,
-                        onRefreshPrices = onRefreshPrices
-                    )
-                    "REMINDERS" -> ReminderSettingsScreen(
-                        state = state,
-                        onIntervalSelected = onIntervalSelected,
-                        onTogglePushNotifications = onTogglePushNotifications,
-                        onSendTestNotification = onSendTestNotification,
-                        onResetTimer = onResetAllCooldowns
-                    )
+            val claimActive = state.currentTab == "CLAIM"
+
+            // Keep Claim in the composition permanently. Hiding it instead of removing it
+            // preserves the WebView instance, page DOM, JS state, cookies and history.
+            CaptchaClaimScreen(
+                state = state,
+                onClaimed = onUserClaimed,
+                onNavigateToHome = { onSelectTab("FAUCET") },
+                isActive = claimActive,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(if (claimActive) 1f else 0f)
+                    .zIndex(if (claimActive) 1f else 0f)
+            )
+
+            // The lightweight native tabs may still be recreated/cross-faded. They sit above
+            // the hidden Claim screen, so the retained WebView cannot intercept their input.
+            if (!claimActive) {
+                Crossfade(targetState = state.currentTab, label = "TabSwitch") { currentTab ->
+                    when (currentTab) {
+                        "FAUCET" -> FaucetHomeScreen(
+                            state = state,
+                            onSelectFaucet = onSelectFaucet,
+                            onResetCooldown = onResetCooldown,
+                            onResetAllCooldowns = onResetAllCooldowns,
+                            onNavigateToWallet = onNavigateToWallet
+                        )
+                        "WALLET" -> WalletScreen(
+                            state = state,
+                            onUpdateAddress = onUpdateAddress,
+                            onSelectNetwork = onSelectNetwork,
+                            onRefreshBalance = onRefreshBalance,
+                            onRefreshPrices = onRefreshPrices
+                        )
+                        "REMINDERS" -> ReminderSettingsScreen(
+                            state = state,
+                            onIntervalSelected = onIntervalSelected,
+                            onTogglePushNotifications = onTogglePushNotifications,
+                            onSendTestNotification = onSendTestNotification,
+                            onResetTimer = onResetAllCooldowns
+                        )
+                    }
                 }
             }
         }

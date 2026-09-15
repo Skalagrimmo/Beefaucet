@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -75,7 +76,8 @@ fun CaptchaClaimScreen(
     state: FaucetUiState,
     onClaimed: (String, Context) -> Unit,
     onNavigateToHome: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isActive: Boolean = true
 ) {
     val context = LocalContext.current
     val currentFaucet = state.selectedFaucet
@@ -84,13 +86,28 @@ fun CaptchaClaimScreen(
     var webProgress by remember { mutableFloatStateOf(0f) }
     var isLoading by remember { mutableStateOf(true) }
     var webError by remember { mutableStateOf<String?>(null) }
+    var loadedFaucetId by remember { mutableStateOf<String?>(null) }
 
-    // Hardware/gesture back press navigates webview history or goes back home
-    BackHandler {
+    // The claim screen stays composed while other tabs are shown so the WebView
+    // keeps its DOM, JS state, cookies and navigation history alive. Only claim
+    // the system back gesture while this tab is actually visible.
+    BackHandler(enabled = isActive) {
         if (webViewInstance?.canGoBack() == true) {
             webViewInstance?.goBack()
         } else {
             onNavigateToHome()
+        }
+    }
+
+    DisposableEffect(webViewInstance) {
+        val ownedWebView = webViewInstance
+        onDispose {
+            if (ownedWebView != null && ownedWebView === webViewInstance) {
+                ownedWebView.stopLoading()
+                ownedWebView.webChromeClient = null
+                ownedWebView.removeAllViews()
+                ownedWebView.destroy()
+            }
         }
     }
 
@@ -273,6 +290,7 @@ fun CaptchaClaimScreen(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     WebView(ctx).apply {
+                        visibility = if (isActive) View.VISIBLE else View.INVISIBLE
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
@@ -339,15 +357,25 @@ fun CaptchaClaimScreen(
                             }
                         }
 
+                        loadedFaucetId = currentFaucet.id
                         loadUrl(currentFaucet.url)
                         webViewInstance = this
                     }
                 },
                 update = { webView ->
-                    // Do not reload currentFaucet.url here. Compose updates while a page is
-                    // loading; forcing the start URL on every recomposition breaks redirects
-                    // and in-site navigation and can look like a network timeout.
                     webViewInstance = webView
+                    webView.visibility = if (isActive) View.VISIBLE else View.INVISIBLE
+
+                    // Keep the current website session alive across ordinary recompositions
+                    // and tab switches. Load a start URL only when the user explicitly chooses
+                    // a different faucet. Internal redirects/navigation must remain untouched.
+                    if (loadedFaucetId != currentFaucet.id) {
+                        loadedFaucetId = currentFaucet.id
+                        webError = null
+                        webProgress = 0f
+                        isLoading = true
+                        webView.loadUrl(currentFaucet.url)
+                    }
                 }
             )
         }
