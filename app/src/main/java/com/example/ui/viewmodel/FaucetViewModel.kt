@@ -51,49 +51,49 @@ val defaultBeeFaucets = listOf(
         name = "Bitcoin Faucet",
         coinSymbol = "BTC",
         coinIcon = "₿",
-        url = "https://beefaucet.org"
+        url = "https://beefaucet.org/btc-faucet/"
     ),
     FaucetItem(
         id = "beefaucet_ltc",
         name = "Litecoin Faucet",
         coinSymbol = "LTC",
         coinIcon = "Ł",
-        url = "https://beefaucet.org"
+        url = "https://beefaucet.org/ltc-faucet/"
     ),
     FaucetItem(
         id = "beefaucet_doge",
         name = "Dogecoin Faucet",
         coinSymbol = "DOGE",
         coinIcon = "Ð",
-        url = "https://beefaucet.org"
+        url = "https://beefaucet.org/doge-faucet/"
     ),
     FaucetItem(
         id = "beefaucet_trx",
         name = "TRON Faucet",
         coinSymbol = "TRX",
         coinIcon = "⟠",
-        url = "https://beefaucet.org"
+        url = "https://beefaucet.org/trx-faucet/"
     ),
     FaucetItem(
         id = "beefaucet_bnb",
         name = "BNB Chain Faucet",
         coinSymbol = "BNB",
         coinIcon = "🔶",
-        url = "https://beefaucet.org"
+        url = "https://beefaucet.org/bnb-faucet/"
     ),
     FaucetItem(
         id = "beefaucet_sol",
         name = "Solana Faucet",
         coinSymbol = "SOL",
         coinIcon = "◎",
-        url = "https://beefaucet.org"
+        url = "https://beefaucet.org/sol-faucet/"
     ),
     FaucetItem(
         id = "beefaucet_usdt",
         name = "Tether Faucet",
         coinSymbol = "USDT",
         coinIcon = "₮",
-        url = "https://beefaucet.org"
+        url = "https://beefaucet.org/usdt-faucet/"
     )
 )
 

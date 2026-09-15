@@ -4,7 +4,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.view.ViewGroup
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -81,6 +83,7 @@ fun CaptchaClaimScreen(
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     var webProgress by remember { mutableFloatStateOf(0f) }
     var isLoading by remember { mutableStateOf(true) }
+    var webError by remember { mutableStateOf<String?>(null) }
 
     // Hardware/gesture back press navigates webview history or goes back home
     BackHandler {
@@ -153,7 +156,7 @@ fun CaptchaClaimScreen(
 
                     // Reload page button
                     IconButton(
-                        onClick = { webViewInstance?.reload() },
+                        onClick = { webError = null; webViewInstance?.reload() },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
@@ -221,6 +224,18 @@ fun CaptchaClaimScreen(
             )
         }
 
+        webError?.let { message ->
+            Text(
+                text = message,
+                color = Color(0xFFFF8A80),
+                fontSize = 11.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF2A1718))
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+            )
+        }
+
         // Faucet URL Indicator
         Box(
             modifier = Modifier
@@ -263,7 +278,12 @@ fun CaptchaClaimScreen(
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
 
-                        // Requirement 2: JavaScript & DOM Storage
+                        // Preserve the normal website session inside WebView.
+                        val cookieManager = CookieManager.getInstance()
+                        cookieManager.setAcceptCookie(true)
+                        cookieManager.setAcceptThirdPartyCookies(this, true)
+
+                        // JavaScript & DOM Storage required by the faucet pages.
                         settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
@@ -274,8 +294,7 @@ fun CaptchaClaimScreen(
                             builtInZoomControls = true
                             displayZoomControls = false
                             setSupportZoom(true)
-                            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                            userAgentString = userAgentString.replace("; wv", "") // Normal browser user-agent
+                            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                         }
 
                         webViewClient = object : WebViewClient() {
@@ -289,12 +308,25 @@ fun CaptchaClaimScreen(
 
                             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                 super.onPageStarted(view, url, favicon)
+                                webError = null
                                 isLoading = true
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 isLoading = false
+                            }
+
+                            override fun onReceivedError(
+                                view: WebView?,
+                                request: WebResourceRequest?,
+                                error: WebResourceError?
+                            ) {
+                                super.onReceivedError(view, request, error)
+                                if (request?.isForMainFrame == true) {
+                                    webError = "WebView error ${error?.errorCode}: ${error?.description ?: "unknown error"}"
+                                    isLoading = false
+                                }
                             }
                         }
 
@@ -312,9 +344,10 @@ fun CaptchaClaimScreen(
                     }
                 },
                 update = { webView ->
-                    if (webView.url != currentFaucet.url) {
-                        webView.loadUrl(currentFaucet.url)
-                    }
+                    // Do not reload currentFaucet.url here. Compose updates while a page is
+                    // loading; forcing the start URL on every recomposition breaks redirects
+                    // and in-site navigation and can look like a network timeout.
+                    webViewInstance = webView
                 }
             )
         }
