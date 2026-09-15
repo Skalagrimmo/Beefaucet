@@ -57,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.remote.RpcNetwork
 import com.example.ui.screens.CaptchaClaimScreen
 import com.example.ui.screens.FaucetHomeScreen
 import com.example.ui.screens.ReminderSettingsScreen
@@ -92,12 +93,10 @@ class MainActivity : ComponentActivity() {
                     onResetAllCooldowns = { viewModel.resetAllCooldowns() },
                     onUserClaimed = { id, ctx -> viewModel.onUserClaimed(id, ctx) },
                     onNavigateToWallet = { viewModel.setTab("WALLET") },
-                    onToggleAutoWithdrawal = { viewModel.toggleAutoWithdrawal(it) },
-                    onUpdateThreshold = { viewModel.updateAutoWithdrawalThreshold(it) },
-                    onUpdateDestination = { viewModel.updateAutoWithdrawalDestination(it) },
-                    onManualWithdraw = { amount, dest, cb ->
-                        viewModel.executeManualWithdrawal(amount, dest, cb)
-                    },
+                    onUpdateAddress = { viewModel.updateWalletAddress(it) },
+                    onSelectNetwork = { viewModel.selectRpcNetwork(it) },
+                    onRefreshBalance = { viewModel.fetchOnChainBalance() },
+                    onRefreshPrices = { viewModel.fetchLiveCoinGeckoPrices() },
                     onIntervalSelected = { viewModel.updateReminderInterval(it) },
                     onTogglePushNotifications = { viewModel.togglePushNotifications(it) },
                     onSendTestNotification = { viewModel.sendTestPushNotification(it) }
@@ -146,10 +145,10 @@ fun MainAppContent(
     onResetAllCooldowns: () -> Unit,
     onUserClaimed: (String, Context) -> Unit,
     onNavigateToWallet: () -> Unit,
-    onToggleAutoWithdrawal: (Boolean) -> Unit,
-    onUpdateThreshold: (Double) -> Unit,
-    onUpdateDestination: (String) -> Unit,
-    onManualWithdraw: (Double, String, (Boolean, String) -> Unit) -> Unit,
+    onUpdateAddress: (String) -> Unit,
+    onSelectNetwork: (RpcNetwork) -> Unit,
+    onRefreshBalance: () -> Unit,
+    onRefreshPrices: () -> Unit,
     onIntervalSelected: (Int) -> Unit,
     onTogglePushNotifications: (Boolean) -> Unit,
     onSendTestNotification: (Context) -> Unit
@@ -199,8 +198,9 @@ fun MainAppContent(
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                // TODO: Real on-chain balance query via RPC/node API required
                                 Text(
-                                    text = "%.4f".format(state.settings.walletBalance),
+                                    text = if (state.settings.walletBalance > 0.0) "%.4f".format(state.settings.walletBalance) else "0.0000",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = HoneyGoldPrimary
@@ -284,10 +284,10 @@ fun MainAppContent(
                     )
                     "WALLET" -> WalletScreen(
                         state = state,
-                        onToggleAutoWithdrawal = onToggleAutoWithdrawal,
-                        onUpdateThreshold = onUpdateThreshold,
-                        onUpdateDestination = onUpdateDestination,
-                        onManualWithdraw = onManualWithdraw
+                        onUpdateAddress = onUpdateAddress,
+                        onSelectNetwork = onSelectNetwork,
+                        onRefreshBalance = onRefreshBalance,
+                        onRefreshPrices = onRefreshPrices
                     )
                     "REMINDERS" -> ReminderSettingsScreen(
                         state = state,

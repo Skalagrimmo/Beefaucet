@@ -8,28 +8,26 @@ import org.junit.Test
 class BeeFaucetLogicTest {
 
     @Test
-    fun `automated withdrawal triggers when balance meets or exceeds threshold`() {
-        val currentBalance = 0.0450
-        val claimReward = 0.0080
-        val threshold = 0.0500
-        val newBalance = currentBalance + claimReward
+    fun `evm wallet address format validation rules`() {
+        val validAddress = "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+        val invalidShort = "0x1234"
+        val invalidNo0x = "71C7656EC7ab88b098defB751B7401B5f6d8976F"
 
-        val shouldAutoWithdraw = newBalance >= threshold
-        assertTrue("Auto withdrawal should be triggered", shouldAutoWithdraw)
+        val isValid = validAddress.startsWith("0x") && validAddress.length == 42
+        val isInvalidShort = invalidShort.startsWith("0x") && invalidShort.length == 42
+        val isInvalidNo0x = invalidNo0x.startsWith("0x") && invalidNo0x.length == 42
 
-        val remainingBalance = newBalance - threshold
-        assertEquals(0.0030, remainingBalance, 0.0001)
+        assertTrue("Valid EVM address passes format check", isValid)
+        assertFalse("Short address fails format check", isInvalidShort)
+        assertFalse("Missing 0x fails format check", isInvalidNo0x)
     }
 
     @Test
-    fun `automated withdrawal does not trigger when balance below threshold`() {
-        val currentBalance = 0.0200
-        val claimReward = 0.0100
-        val threshold = 0.0500
-        val newBalance = currentBalance + claimReward
-
-        val shouldAutoWithdraw = newBalance >= threshold
-        assertFalse("Auto withdrawal should not trigger prematurely", shouldAutoWithdraw)
+    fun `usd valuation calculation from coingecko rate`() {
+        val balance = 0.5
+        val coinGeckoBnbPrice = 580.0
+        val usdValuation = balance * coinGeckoBnbPrice
+        assertEquals(290.0, usdValuation, 0.001)
     }
 
     @Test

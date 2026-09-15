@@ -8,8 +8,10 @@ data class FaucetClaimEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val timestamp: Long = System.currentTimeMillis(),
-    val amountBee: Double,
+    // TODO: Real reward amount queried from on-chain transaction or faucet API
+    val amountBee: Double = 0.0,
     val captchaType: String,
-    val txHash: String,
-    val faucetSource: String = "Bee Faucet Hive-1"
+    // TODO: Real on-chain transaction hash returned by faucet service/node
+    val txHash: String = "",
+    val faucetSource: String = "beefaucet.org"
 )

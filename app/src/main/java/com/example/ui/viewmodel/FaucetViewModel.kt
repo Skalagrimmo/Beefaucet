@@ -8,6 +8,10 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.entity.FaucetClaimEntity
 import com.example.data.local.entity.FaucetSettingsEntity
 import com.example.data.local.entity.WalletTransactionEntity
+import com.example.data.remote.CoinGeckoPriceService
+import com.example.data.remote.RpcNetwork
+import com.example.data.remote.Web3BalanceService
+import com.example.data.remote.availableRpcNetworks
 import com.example.data.repository.FaucetRepository
 import com.example.util.NotificationHelper
 import kotlinx.coroutines.delay
@@ -101,18 +105,30 @@ data class FaucetUiState(
     val transactions: List<WalletTransactionEntity> = emptyList(),
     val timeRemainingMs: Long = 0L,
     val isFaucetReady: Boolean = true,
-    val currentTab: String = "FAUCET"
+    val currentTab: String = "FAUCET",
+    val isBalanceLoading: Boolean = false,
+    val balanceErrorMessage: String? = null,
+    val selectedRpcNetwork: RpcNetwork = availableRpcNetworks[0],
+    val isPriceLoading: Boolean = false,
+    val priceErrorMessage: String? = null,
+    val coinGeckoPrices: Map<String, Double> = emptyMap(),
+    val lastPriceUpdateEpochMs: Long = 0L
 )
 
 class FaucetViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: FaucetRepository
+    private val web3Service = Web3BalanceService()
+    private val coinGeckoService = CoinGeckoPriceService()
 
     init {
         val database = AppDatabase.getDatabase(application)
         repository = FaucetRepository(database.faucetDao())
         viewModelScope.launch {
-            repository.getOrInitSettings()
+            val s = repository.getOrInitSettings()
+            if (s.walletAddress.isNotBlank()) {
+                fetchOnChainBalance(s.walletAddress)
+            }
         }
     }
 
@@ -121,6 +137,7 @@ class FaucetViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         NotificationHelper.createNotificationChannel(application)
+        fetchLiveCoinGeckoPrices()
 
         // Combine DB flows into UI State
         viewModelScope.launch {
@@ -302,46 +319,86 @@ class FaucetViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun toggleAutoWithdrawal(enabled: Boolean) {
+    fun selectRpcNetwork(network: RpcNetwork) {
+        _uiState.update { it.copy(selectedRpcNetwork = network) }
+        fetchOnChainBalance()
+    }
+
+    fun updateWalletAddress(newAddress: String) {
         viewModelScope.launch {
-            val s = _uiState.value.settings
-            repository.updateSettings(s.copy(autoWithdrawalEnabled = enabled))
+            val clean = newAddress.trim()
+            repository.updateWalletAddress(clean)
+            fetchOnChainBalance(clean)
         }
     }
 
-    fun updateAutoWithdrawalThreshold(threshold: Double) {
+    fun fetchOnChainBalance(addressOverride: String? = null) {
+        val address = addressOverride ?: _uiState.value.settings.walletAddress
+        if (address.isBlank()) {
+            _uiState.update {
+                it.copy(
+                    isBalanceLoading = false,
+                    balanceErrorMessage = null
+                )
+            }
+            return
+        }
+
+        val network = _uiState.value.selectedRpcNetwork
+        _uiState.update { it.copy(isBalanceLoading = true, balanceErrorMessage = null) }
+
         viewModelScope.launch {
-            val s = _uiState.value.settings
-            repository.updateSettings(s.copy(autoWithdrawalThreshold = threshold))
+            val result = web3Service.getOnChainBalance(address, network.rpcUrl)
+            result.fold(
+                onSuccess = { onChainBalance ->
+                    repository.updateWalletBalance(onChainBalance)
+                    _uiState.update {
+                        it.copy(
+                            isBalanceLoading = false,
+                            balanceErrorMessage = null
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isBalanceLoading = false,
+                            balanceErrorMessage = error.message ?: "Failed to query RPC balance"
+                        )
+                    }
+                }
+            )
         }
     }
 
-    fun updateAutoWithdrawalDestination(address: String) {
+    fun fetchLiveCoinGeckoPrices() {
+        _uiState.update { it.copy(isPriceLoading = true, priceErrorMessage = null) }
         viewModelScope.launch {
-            val s = _uiState.value.settings
-            repository.updateSettings(s.copy(autoWithdrawalDestination = address))
+            val result = coinGeckoService.fetchLivePrices()
+            result.fold(
+                onSuccess = { prices ->
+                    _uiState.update {
+                        it.copy(
+                            isPriceLoading = false,
+                            coinGeckoPrices = prices,
+                            lastPriceUpdateEpochMs = System.currentTimeMillis(),
+                            priceErrorMessage = null
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isPriceLoading = false,
+                            priceErrorMessage = error.message ?: "Failed to fetch CoinGecko rates"
+                        )
+                    }
+                }
+            )
         }
     }
 
     fun sendTestPushNotification(context: Context) {
         NotificationHelper.sendFaucetReadyNotification(context, _uiState.value.selectedFaucet.name)
-    }
-
-    fun executeManualWithdrawal(
-        amount: Double,
-        destination: String,
-        onComplete: (Boolean, String) -> Unit
-    ) {
-        viewModelScope.launch {
-            val result = repository.executeManualWithdrawal(amount, destination)
-            result.fold(
-                onSuccess = { tx ->
-                    onComplete(true, "Transferred %.4f BEE to %s".format(amount, destination.take(8)))
-                },
-                onFailure = { error ->
-                    onComplete(false, error.message ?: "Withdrawal failed")
-                }
-            )
-        }
     }
 }

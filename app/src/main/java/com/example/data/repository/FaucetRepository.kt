@@ -5,25 +5,12 @@ import com.example.data.local.entity.FaucetClaimEntity
 import com.example.data.local.entity.FaucetSettingsEntity
 import com.example.data.local.entity.WalletTransactionEntity
 import kotlinx.coroutines.flow.Flow
-import java.security.SecureRandom
 
 class FaucetRepository(private val faucetDao: FaucetDao) {
 
     val allClaims: Flow<List<FaucetClaimEntity>> = faucetDao.getAllClaims()
     val allTransactions: Flow<List<WalletTransactionEntity>> = faucetDao.getAllTransactions()
     val settingsFlow: Flow<FaucetSettingsEntity?> = faucetDao.getSettingsFlow()
-
-    private val random = SecureRandom()
-
-    private fun generateRandomTxHash(): String {
-        val bytes = ByteArray(32)
-        random.nextBytes(bytes)
-        val sb = StringBuilder("0x")
-        for (b in bytes) {
-            sb.append(String.format("%02x", b))
-        }
-        return sb.toString()
-    }
 
     suspend fun getOrInitSettings(): FaucetSettingsEntity {
         val existing = faucetDao.getSettingsDirect()
@@ -36,11 +23,11 @@ class FaucetRepository(private val faucetDao: FaucetDao) {
     }
 
     suspend fun insertClaimOnly(faucetName: String, url: String): FaucetClaimEntity {
-        val txHash = generateRandomTxHash()
+        // TODO: Real on-chain transaction hash and reward amount should be retrieved from faucet API/RPC
         val claim = FaucetClaimEntity(
             amountBee = 0.0,
             captchaType = faucetName,
-            txHash = txHash
+            txHash = "" // TODO: Real on-chain transaction hash from faucet backend/RPC
         )
         faucetDao.insertClaim(claim)
 
@@ -59,102 +46,44 @@ class FaucetRepository(private val faucetDao: FaucetDao) {
     }
 
     /**
-     * Executes a faucet claim, credits wallet, calculates next claim countdown,
-     * and triggers automated withdrawal if balance >= threshold.
+     * Executes a faucet claim.
+     * TODO: Requires real network call to faucet smart contract or backend service to claim tokens.
      */
     suspend fun recordClaim(
         amount: Double,
         captchaType: String
     ): Pair<FaucetClaimEntity, WalletTransactionEntity?> {
+        // TODO: Real on-chain transaction and network call required
         val currentSettings = getOrInitSettings()
-        val txHash = generateRandomTxHash()
-
         val claim = FaucetClaimEntity(
             amountBee = amount,
             captchaType = captchaType,
-            txHash = txHash
+            txHash = "" // TODO: Real transaction hash from blockchain RPC
         )
         faucetDao.insertClaim(claim)
 
-        // Record credit in wallet ledger
+        // TODO: Real transaction receipt verification needed before recording confirmed status
         val claimTx = WalletTransactionEntity(
             type = "FAUCET_CLAIM",
             amount = amount,
             toAddress = currentSettings.walletAddress,
-            txHash = txHash,
-            status = "CONFIRMED",
-            note = "Reward for $captchaType verification"
+            txHash = "", // TODO: Real on-chain txHash
+            status = "", // TODO: Real confirmation status ("PENDING" / "CONFIRMED")
+            note = "Claim for $captchaType verification"
         )
         faucetDao.insertTransaction(claimTx)
 
-        val updatedBalance = currentSettings.walletBalance + amount
-        val updatedTotal = currentSettings.totalClaimed + amount
-        val nextClaimMs = System.currentTimeMillis() + (currentSettings.reminderIntervalMinutes * 60 * 1000L)
-
-        var autoWithdrawalTx: WalletTransactionEntity? = null
-        var finalBalance = updatedBalance
-
-        // Check Automated Withdrawal Trigger
-        if (currentSettings.autoWithdrawalEnabled &&
-            updatedBalance >= currentSettings.autoWithdrawalThreshold &&
-            currentSettings.autoWithdrawalDestination.isNotBlank()
-        ) {
-            val withdrawAmount = currentSettings.autoWithdrawalThreshold
-            finalBalance = (updatedBalance - withdrawAmount).coerceAtLeast(0.0)
-            val withdrawTxHash = generateRandomTxHash()
-
-            autoWithdrawalTx = WalletTransactionEntity(
-                type = "AUTO_WITHDRAWAL",
-                amount = withdrawAmount,
-                toAddress = currentSettings.autoWithdrawalDestination,
-                txHash = withdrawTxHash,
-                status = "CONFIRMED",
-                note = "Auto-threshold triggered (>= ${currentSettings.autoWithdrawalThreshold} BEE)"
-            )
-            faucetDao.insertTransaction(autoWithdrawalTx)
-        }
-
-        val updatedSettings = currentSettings.copy(
-            walletBalance = finalBalance,
-            totalClaimed = updatedTotal,
-            claimStreak = currentSettings.claimStreak + 1,
-            nextClaimEpochMs = nextClaimMs
-        )
-        faucetDao.insertOrUpdateSettings(updatedSettings)
-
-        return Pair(claim, autoWithdrawalTx)
+        return Pair(claim, null)
     }
 
-    suspend fun executeManualWithdrawal(
-        amount: Double,
-        destinationAddress: String
-    ): Result<WalletTransactionEntity> {
-        val currentSettings = getOrInitSettings()
-        if (amount <= 0.0) {
-            return Result.failure(IllegalArgumentException("Amount must be greater than 0"))
-        }
-        if (amount > currentSettings.walletBalance) {
-            return Result.failure(IllegalStateException("Insufficient balance"))
-        }
-        if (destinationAddress.isBlank() || !destinationAddress.startsWith("0x") || destinationAddress.length < 10) {
-            return Result.failure(IllegalArgumentException("Invalid crypto destination address (must start with 0x)"))
-        }
+    suspend fun updateWalletBalance(balance: Double) {
+        val current = getOrInitSettings()
+        faucetDao.insertOrUpdateSettings(current.copy(walletBalance = balance))
+    }
 
-        val txHash = generateRandomTxHash()
-        val withdrawalTx = WalletTransactionEntity(
-            type = "MANUAL_WITHDRAWAL",
-            amount = amount,
-            toAddress = destinationAddress,
-            txHash = txHash,
-            status = "CONFIRMED",
-            note = "Manual wallet payout"
-        )
-        faucetDao.insertTransaction(withdrawalTx)
-
-        val newBalance = (currentSettings.walletBalance - amount).coerceAtLeast(0.0)
-        faucetDao.insertOrUpdateSettings(currentSettings.copy(walletBalance = newBalance))
-
-        return Result.success(withdrawalTx)
+    suspend fun updateWalletAddress(address: String) {
+        val current = getOrInitSettings()
+        faucetDao.insertOrUpdateSettings(current.copy(walletAddress = address))
     }
 
     suspend fun resetNextClaimNow() {

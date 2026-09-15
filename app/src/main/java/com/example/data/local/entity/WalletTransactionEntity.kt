@@ -11,7 +11,9 @@ data class WalletTransactionEntity(
     val type: String, // "FAUCET_CLAIM", "AUTO_WITHDRAWAL", "MANUAL_WITHDRAWAL"
     val amount: Double,
     val toAddress: String,
-    val txHash: String,
-    val status: String = "CONFIRMED", // "CONFIRMED", "PROCESSING"
+    // TODO: Real transaction hash returned by blockchain RPC/node upon network broadcast
+    val txHash: String = "",
+    // TODO: Real transaction confirmation status from on-chain receipt ("PENDING", "CONFIRMED", "FAILED")
+    val status: String = "",
     val note: String = ""
 )

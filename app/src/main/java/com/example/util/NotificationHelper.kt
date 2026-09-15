@@ -20,10 +20,9 @@ import com.example.R
 object NotificationHelper {
     const val CHANNEL_ID = "bee_faucet_reminders_channel"
     private const val CHANNEL_NAME = "Bee Faucet Reminders"
-    private const val CHANNEL_DESC = "Alerts when crypto faucet is ready to claim and auto-withdrawal status"
+    private const val CHANNEL_DESC = "Alerts when crypto faucet drops are ready to claim"
 
     private const val NOTIFICATION_ID_FAUCET_READY = 1001
-    private const val NOTIFICATION_ID_WITHDRAWAL = 1002
 
     fun createNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -105,52 +104,6 @@ object NotificationHelper {
 
         try {
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID_FAUCET_READY, builder.build())
-        } catch (_: SecurityException) {
-        }
-    }
-
-    fun sendAutoWithdrawalNotification(
-        context: Context,
-        amount: Double,
-        destination: String,
-        txHash: String
-    ) {
-        if (!hasNotificationPermission(context)) return
-
-        createNotificationChannel(context)
-
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            putExtra("OPEN_TAB", "WALLET")
-        }
-        val pendingIntent: PendingIntent = PendingIntent.getActivity(
-            context,
-            1,
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val shortAddr = if (destination.length > 10) {
-            "${destination.take(6)}...${destination.takeLast(4)}"
-        } else {
-            destination
-        }
-        val shortTx = if (txHash.length > 12) "${txHash.take(8)}..." else txHash
-
-        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("🚀 Automated Withdrawal Executed!")
-            .setContentText("Threshold reached: %.4f BEE transferred to %s".format(amount, shortAddr))
-            .setStyle(
-                NotificationCompat.BigTextStyle()
-                    .bigText("Automated payout sent! %.4f BEE transferred to %s. Tx Hash: %s".format(amount, shortAddr, shortTx))
-            )
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-
-        try {
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID_WITHDRAWAL, builder.build())
         } catch (_: SecurityException) {
         }
     }
