@@ -35,6 +35,25 @@ class FaucetRepository(private val faucetDao: FaucetDao) {
         return initial
     }
 
+    suspend fun insertClaimOnly(faucetName: String, url: String): FaucetClaimEntity {
+        val txHash = generateRandomTxHash()
+        val claim = FaucetClaimEntity(
+            amountBee = 0.0,
+            captchaType = faucetName,
+            txHash = txHash
+        )
+        faucetDao.insertClaim(claim)
+
+        val currentSettings = getOrInitSettings()
+        faucetDao.insertOrUpdateSettings(
+            currentSettings.copy(
+                claimStreak = currentSettings.claimStreak + 1,
+                nextClaimEpochMs = System.currentTimeMillis() + 60_000L
+            )
+        )
+        return claim
+    }
+
     suspend fun updateSettings(settings: FaucetSettingsEntity) {
         faucetDao.insertOrUpdateSettings(settings)
     }

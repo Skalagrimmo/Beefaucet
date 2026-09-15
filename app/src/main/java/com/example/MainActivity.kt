@@ -1,5 +1,7 @@
 package com.example
 
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,13 +28,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Opacity
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -45,7 +46,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +66,8 @@ import com.example.ui.theme.HoneyGoldLight
 import com.example.ui.theme.HoneyGoldPrimary
 import com.example.ui.theme.HoneyMintTertiary
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.viewmodel.FaucetItem
+import com.example.ui.viewmodel.FaucetUiState
 import com.example.ui.viewmodel.FaucetViewModel
 
 class MainActivity : ComponentActivity() {
@@ -76,7 +78,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Handle notification click intent
         handleIntent(intent)
 
         setContent {
@@ -86,12 +87,11 @@ class MainActivity : ComponentActivity() {
                 MainAppContent(
                     state = state,
                     onSelectTab = { viewModel.setTab(it) },
-                    onNavigateToCaptcha = { viewModel.setTab("CAPTCHA") },
+                    onSelectFaucet = { viewModel.selectFaucet(it) },
+                    onResetCooldown = { viewModel.resetFaucetCooldown(it) },
+                    onResetAllCooldowns = { viewModel.resetAllCooldowns() },
+                    onUserClaimed = { id, ctx -> viewModel.onUserClaimed(id, ctx) },
                     onNavigateToWallet = { viewModel.setTab("WALLET") },
-                    onResetTimer = { viewModel.resetTimerForTesting() },
-                    onSolved = { viewModel.onCaptchaSolved(it) },
-                    onDismissSuccess = { viewModel.dismissSuccessDialog() },
-                    onModeSelected = { viewModel.setCaptchaMode(it) },
                     onToggleAutoWithdrawal = { viewModel.toggleAutoWithdrawal(it) },
                     onUpdateThreshold = { viewModel.updateAutoWithdrawalThreshold(it) },
                     onUpdateDestination = { viewModel.updateAutoWithdrawalDestination(it) },
@@ -106,17 +106,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: android.content.Intent) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
     }
 
-    private fun handleIntent(intent: android.content.Intent?) {
+    private fun handleIntent(intent: Intent?) {
         val targetTab = intent?.getStringExtra("OPEN_TAB")
         if (targetTab == "CLAIM") {
-            viewModel.setTab("CAPTCHA")
+            viewModel.setTab("CLAIM")
         } else if (targetTab == "WALLET") {
             viewModel.setTab("WALLET")
+        } else if (targetTab == "FAUCET") {
+            viewModel.setTab("FAUCET")
         }
     }
 }
@@ -137,25 +139,24 @@ fun Greeting(name: String, modifier: Modifier = Modifier) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainAppContent(
-    state: com.example.ui.viewmodel.FaucetUiState,
+    state: FaucetUiState,
     onSelectTab: (String) -> Unit,
-    onNavigateToCaptcha: () -> Unit,
+    onSelectFaucet: (FaucetItem) -> Unit,
+    onResetCooldown: (String) -> Unit,
+    onResetAllCooldowns: () -> Unit,
+    onUserClaimed: (String, Context) -> Unit,
     onNavigateToWallet: () -> Unit,
-    onResetTimer: () -> Unit,
-    onSolved: (android.content.Context) -> Unit,
-    onDismissSuccess: () -> Unit,
-    onModeSelected: (com.example.ui.viewmodel.CaptchaMode) -> Unit,
     onToggleAutoWithdrawal: (Boolean) -> Unit,
     onUpdateThreshold: (Double) -> Unit,
     onUpdateDestination: (String) -> Unit,
     onManualWithdraw: (Double, String, (Boolean, String) -> Unit) -> Unit,
     onIntervalSelected: (Int) -> Unit,
     onTogglePushNotifications: (Boolean) -> Unit,
-    onSendTestNotification: (android.content.Context) -> Unit
+    onSendTestNotification: (Context) -> Unit
 ) {
     val navItems = listOf(
-        NavItem("FAUCET", "Faucet", Icons.Filled.Opacity, Icons.Outlined.Opacity, "nav_faucet"),
-        NavItem("CAPTCHA", "Claim", Icons.Filled.Security, Icons.Outlined.Security, "nav_claim"),
+        NavItem("FAUCET", "Faucets", Icons.Filled.Language, Icons.Outlined.Language, "nav_faucet"),
+        NavItem("CLAIM", "Claim", Icons.Filled.Security, Icons.Outlined.Security, "nav_claim"),
         NavItem("WALLET", "Wallet", Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet, "nav_wallet"),
         NavItem("REMINDERS", "Reminders", Icons.Filled.Notifications, Icons.Outlined.Notifications, "nav_reminders")
     )
@@ -163,61 +164,63 @@ fun MainAppContent(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
-            TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(text = "🐝", fontSize = 22.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "Bee Faucet",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Automated Crypto Payouts",
-                                fontSize = 11.sp,
-                                color = HoneyGoldLight
-                            )
+            if (state.currentTab != "CLAIM") {
+                TopAppBar(
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(text = "🐝", fontSize = 22.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Bee Faucet",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "beefaucet.org Hub • 60s Reminders",
+                                    fontSize = 11.sp,
+                                    color = HoneyGoldLight
+                                )
+                            }
                         }
-                    }
-                },
-                actions = {
-                    // Quick balance pill on top right
-                    Box(
-                        modifier = Modifier
-                            .padding(end = 12.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFF20232C))
-                            .clickable { onNavigateToWallet() }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "%.4f".format(state.settings.walletBalance),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = HoneyGoldPrimary
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "BEE",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = CyberAmberSecondary
-                            )
+                    },
+                    actions = {
+                        // Quick balance pill on top right
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 12.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFF20232C))
+                                .clickable { onNavigateToWallet() }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "%.4f".format(state.settings.walletBalance),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = HoneyGoldPrimary
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "BEE",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = CyberAmberSecondary
+                                )
+                            }
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF101114)
-                ),
-                modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
-            )
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color(0xFF101114)
+                    ),
+                    modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
+                )
+            }
         },
         bottomBar = {
             NavigationBar(
@@ -269,17 +272,15 @@ fun MainAppContent(
                 when (currentTab) {
                     "FAUCET" -> FaucetHomeScreen(
                         state = state,
-                        onNavigateToCaptcha = onNavigateToCaptcha,
-                        onNavigateToWallet = onNavigateToWallet,
-                        onResetTimer = onResetTimer
-                    )
-                    "CAPTCHA" -> CaptchaClaimScreen(
-                        state = state,
-                        onModeSelected = onModeSelected,
-                        onSolved = onSolved,
-                        onDismissSuccess = onDismissSuccess,
-                        onNavigateToHome = { onSelectTab("FAUCET") },
+                        onSelectFaucet = onSelectFaucet,
+                        onResetCooldown = onResetCooldown,
+                        onResetAllCooldowns = onResetAllCooldowns,
                         onNavigateToWallet = onNavigateToWallet
+                    )
+                    "CLAIM" -> CaptchaClaimScreen(
+                        state = state,
+                        onClaimed = onUserClaimed,
+                        onNavigateToHome = { onSelectTab("FAUCET") }
                     )
                     "WALLET" -> WalletScreen(
                         state = state,
@@ -293,7 +294,7 @@ fun MainAppContent(
                         onIntervalSelected = onIntervalSelected,
                         onTogglePushNotifications = onTogglePushNotifications,
                         onSendTestNotification = onSendTestNotification,
-                        onResetTimer = onResetTimer
+                        onResetTimer = onResetAllCooldowns
                     )
                 }
             }

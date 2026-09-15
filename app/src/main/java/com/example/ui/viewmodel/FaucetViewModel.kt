@@ -12,34 +12,97 @@ import com.example.data.repository.FaucetRepository
 import com.example.util.NotificationHelper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.math.max
+
+data class FaucetItem(
+    val id: String,
+    val name: String,
+    val coinSymbol: String,
+    val coinIcon: String,
+    val url: String = "https://beefaucet.org",
+    val dailyClaims: Int = 0,
+    val maxDailyClaims: Int = 10,
+    val cooldownSecondsRemaining: Int = 0,
+    val lastClaimEpochMs: Long = 0L
+) {
+    val isReady: Boolean get() = dailyClaims < maxDailyClaims && cooldownSecondsRemaining == 0
+    val isLimitReached: Boolean get() = dailyClaims >= maxDailyClaims
+}
+
+val defaultBeeFaucets = listOf(
+    FaucetItem(
+        id = "beefaucet_main",
+        name = "Bee Faucet (Main)",
+        coinSymbol = "BEE",
+        coinIcon = "🐝",
+        url = "https://beefaucet.org"
+    ),
+    FaucetItem(
+        id = "beefaucet_btc",
+        name = "Bitcoin Faucet",
+        coinSymbol = "BTC",
+        coinIcon = "₿",
+        url = "https://beefaucet.org"
+    ),
+    FaucetItem(
+        id = "beefaucet_ltc",
+        name = "Litecoin Faucet",
+        coinSymbol = "LTC",
+        coinIcon = "Ł",
+        url = "https://beefaucet.org"
+    ),
+    FaucetItem(
+        id = "beefaucet_doge",
+        name = "Dogecoin Faucet",
+        coinSymbol = "DOGE",
+        coinIcon = "Ð",
+        url = "https://beefaucet.org"
+    ),
+    FaucetItem(
+        id = "beefaucet_trx",
+        name = "TRON Faucet",
+        coinSymbol = "TRX",
+        coinIcon = "⟠",
+        url = "https://beefaucet.org"
+    ),
+    FaucetItem(
+        id = "beefaucet_bnb",
+        name = "BNB Chain Faucet",
+        coinSymbol = "BNB",
+        coinIcon = "🔶",
+        url = "https://beefaucet.org"
+    ),
+    FaucetItem(
+        id = "beefaucet_sol",
+        name = "Solana Faucet",
+        coinSymbol = "SOL",
+        coinIcon = "◎",
+        url = "https://beefaucet.org"
+    ),
+    FaucetItem(
+        id = "beefaucet_usdt",
+        name = "Tether Faucet",
+        coinSymbol = "USDT",
+        coinIcon = "₮",
+        url = "https://beefaucet.org"
+    )
+)
 
 data class FaucetUiState(
     val settings: FaucetSettingsEntity = FaucetSettingsEntity(),
+    val faucets: List<FaucetItem> = defaultBeeFaucets,
+    val selectedFaucet: FaucetItem = defaultBeeFaucets[0],
     val claims: List<FaucetClaimEntity> = emptyList(),
     val transactions: List<WalletTransactionEntity> = emptyList(),
     val timeRemainingMs: Long = 0L,
     val isFaucetReady: Boolean = true,
-    val isClaiming: Boolean = false,
-    val selectedCaptchaMode: CaptchaMode = CaptchaMode.SLIDER,
-    val showClaimSuccessDialog: Boolean = false,
-    val lastClaimReward: Double = 0.0,
-    val lastTxHash: String = "",
-    val lastAutoWithdrawal: WalletTransactionEntity? = null,
     val currentTab: String = "FAUCET"
 )
-
-enum class CaptchaMode {
-    SLIDER, MATRIX, MATH
-}
 
 class FaucetViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -67,49 +130,57 @@ class FaucetViewModel(application: Application) : AndroidViewModel(application) 
                 repository.allTransactions
             ) { settings, claims, transactions ->
                 val currentSettings = settings ?: FaucetSettingsEntity()
-                val now = System.currentTimeMillis()
-                val remaining = max(0L, currentSettings.nextClaimEpochMs - now)
-                val ready = remaining == 0L
 
                 _uiState.update { current ->
                     current.copy(
                         settings = currentSettings,
                         claims = claims,
-                        transactions = transactions,
-                        timeRemainingMs = remaining,
-                        isFaucetReady = ready
+                        transactions = transactions
                     )
                 }
             }.collect {}
         }
 
-        // 1-second countdown ticker
+        // 1-second countdown ticker for 60s cooldowns
         viewModelScope.launch {
-            var previousReadyState = false
             while (isActive) {
-                val nextClaim = _uiState.value.settings.nextClaimEpochMs
-                val now = System.currentTimeMillis()
-                val remaining = max(0L, nextClaim - now)
-                val ready = remaining == 0L
+                delay(1000L)
 
-                _uiState.update {
-                    it.copy(
-                        timeRemainingMs = remaining,
-                        isFaucetReady = ready
+                val currentFaucets = _uiState.value.faucets
+                var anyFinished = false
+                val updatedFaucets = currentFaucets.map { faucet ->
+                    if (faucet.cooldownSecondsRemaining > 0) {
+                        val newCooldown = faucet.cooldownSecondsRemaining - 1
+                        if (newCooldown == 0) {
+                            anyFinished = true
+                            if (_uiState.value.settings.pushNotificationEnabled) {
+                                NotificationHelper.sendFaucetReadyNotification(
+                                    getApplication(),
+                                    faucet.name
+                                )
+                            }
+                            if (_uiState.value.settings.vibrationEnabled) {
+                                NotificationHelper.triggerVibration(getApplication())
+                            }
+                        }
+                        faucet.copy(cooldownSecondsRemaining = newCooldown)
+                    } else {
+                        faucet
+                    }
+                }
+
+                // Update selected faucet reference
+                val selectedId = _uiState.value.selectedFaucet.id
+                val updatedSelected = updatedFaucets.find { it.id == selectedId } ?: updatedFaucets.first()
+
+                _uiState.update { current ->
+                    current.copy(
+                        faucets = updatedFaucets,
+                        selectedFaucet = updatedSelected,
+                        timeRemainingMs = (updatedSelected.cooldownSecondsRemaining * 1000).toLong(),
+                        isFaucetReady = updatedSelected.isReady
                     )
                 }
-
-                // Push notification when transition from not-ready to ready happens
-                if (!previousReadyState && ready && nextClaim > 0L) {
-                    if (_uiState.value.settings.pushNotificationEnabled) {
-                        NotificationHelper.sendFaucetReadyNotification(getApplication())
-                    }
-                    if (_uiState.value.settings.vibrationEnabled) {
-                        NotificationHelper.triggerVibration(getApplication())
-                    }
-                }
-                previousReadyState = ready
-                delay(1000L)
             }
         }
     }
@@ -118,57 +189,103 @@ class FaucetViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { it.copy(currentTab = tab) }
     }
 
-    fun setCaptchaMode(mode: CaptchaMode) {
-        _uiState.update { it.copy(selectedCaptchaMode = mode) }
-    }
-
-    fun onCaptchaSolved(context: Context) {
-        if (_uiState.value.isClaiming) return
-
-        viewModelScope.launch {
-            _uiState.update { it.copy(isClaiming = true) }
-
-            // Slight authentic cryptographic hashing simulation
-            delay(500L)
-
-            // Random claim reward between 0.0050 and 0.0125 BEE
-            val rewardAmount = (50 + (0..75).random()) / 10000.0
-            val captchaName = when (_uiState.value.selectedCaptchaMode) {
-                CaptchaMode.SLIDER -> "Honeycomb Alignment"
-                CaptchaMode.MATRIX -> "Pattern Matrix"
-                CaptchaMode.MATH -> "Hex Nonce Checksum"
-            }
-
-            val (claim, autoWithdrawal) = repository.recordClaim(rewardAmount, captchaName)
-
-            if (_uiState.value.settings.vibrationEnabled) {
-                NotificationHelper.triggerVibration(context)
-            }
-
-            // If auto-withdrawal was triggered, trigger push notification!
-            if (autoWithdrawal != null && _uiState.value.settings.pushNotificationEnabled) {
-                NotificationHelper.sendAutoWithdrawalNotification(
-                    context = context,
-                    amount = autoWithdrawal.amount,
-                    destination = autoWithdrawal.toAddress,
-                    txHash = autoWithdrawal.txHash
-                )
-            }
-
-            _uiState.update {
-                it.copy(
-                    isClaiming = false,
-                    showClaimSuccessDialog = true,
-                    lastClaimReward = rewardAmount,
-                    lastTxHash = claim.txHash,
-                    lastAutoWithdrawal = autoWithdrawal
-                )
-            }
+    fun selectFaucet(faucet: FaucetItem) {
+        _uiState.update {
+            it.copy(
+                selectedFaucet = faucet,
+                currentTab = "CLAIM"
+            )
         }
     }
 
-    fun dismissSuccessDialog() {
-        _uiState.update { it.copy(showClaimSuccessDialog = false) }
+    fun selectFaucetById(faucetId: String) {
+        val found = _uiState.value.faucets.find { it.id == faucetId } ?: return
+        selectFaucet(found)
+    }
+
+    /**
+     * Called when the user clicks "I Have Claimed / Start 60s Timer" on the WebView claim screen.
+     * Increments the daily claim counter for that faucet (up to 10/day).
+     * Starts the 60-second cooldown timer.
+     * Navigates back to the Home Faucet Grid.
+     * No fake random reward or fake balance addition.
+     */
+    fun onUserClaimed(faucetId: String, context: Context) {
+        val targetFaucet = _uiState.value.faucets.find { it.id == faucetId }
+            ?: _uiState.value.selectedFaucet
+
+        val updatedFaucets = _uiState.value.faucets.map { faucet ->
+            if (faucet.id == targetFaucet.id) {
+                val newCount = (faucet.dailyClaims + 1).coerceAtMost(faucet.maxDailyClaims)
+                faucet.copy(
+                    dailyClaims = newCount,
+                    cooldownSecondsRemaining = 60, // 60-second cooldown timer!
+                    lastClaimEpochMs = System.currentTimeMillis()
+                )
+            } else {
+                faucet
+            }
+        }
+
+        val updatedSelected = updatedFaucets.find { it.id == targetFaucet.id } ?: updatedFaucets.first()
+
+        _uiState.update { current ->
+            current.copy(
+                faucets = updatedFaucets,
+                selectedFaucet = updatedSelected,
+                currentTab = "FAUCET" // Navigate back to the Home Faucet Grid!
+            )
+        }
+
+        if (_uiState.value.settings.vibrationEnabled) {
+            NotificationHelper.triggerVibration(context)
+        }
+
+        // Record real claim activity log in database for history without fake reward additions
+        viewModelScope.launch {
+            repository.insertClaimOnly(targetFaucet.name, targetFaucet.url)
+        }
+    }
+
+    fun resetFaucetCooldown(faucetId: String) {
+        val updated = _uiState.value.faucets.map { faucet ->
+            if (faucet.id == faucetId) {
+                faucet.copy(cooldownSecondsRemaining = 0)
+            } else {
+                faucet
+            }
+        }
+        val updatedSelected = updated.find { it.id == _uiState.value.selectedFaucet.id } ?: updated.first()
+        _uiState.update {
+            it.copy(
+                faucets = updated,
+                selectedFaucet = updatedSelected,
+                timeRemainingMs = 0L,
+                isFaucetReady = updatedSelected.isReady
+            )
+        }
+    }
+
+    fun resetAllCooldowns() {
+        val updated = _uiState.value.faucets.map { it.copy(cooldownSecondsRemaining = 0) }
+        _uiState.update {
+            it.copy(
+                faucets = updated,
+                selectedFaucet = it.selectedFaucet.copy(cooldownSecondsRemaining = 0),
+                timeRemainingMs = 0L,
+                isFaucetReady = true
+            )
+        }
+    }
+
+    fun resetDailyLimits() {
+        val updated = _uiState.value.faucets.map { it.copy(dailyClaims = 0, cooldownSecondsRemaining = 0) }
+        _uiState.update {
+            it.copy(
+                faucets = updated,
+                selectedFaucet = it.selectedFaucet.copy(dailyClaims = 0, cooldownSecondsRemaining = 0)
+            )
+        }
     }
 
     fun updateReminderInterval(minutes: Int) {
@@ -206,14 +323,8 @@ class FaucetViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun resetTimerForTesting() {
-        viewModelScope.launch {
-            repository.resetNextClaimNow()
-        }
-    }
-
     fun sendTestPushNotification(context: Context) {
-        NotificationHelper.sendFaucetReadyNotification(context)
+        NotificationHelper.sendFaucetReadyNotification(context, _uiState.value.selectedFaucet.name)
     }
 
     fun executeManualWithdrawal(

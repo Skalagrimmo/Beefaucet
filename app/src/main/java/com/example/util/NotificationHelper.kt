@@ -74,14 +74,14 @@ object NotificationHelper {
         }
     }
 
-    fun sendFaucetReadyNotification(context: Context) {
+    fun sendFaucetReadyNotification(context: Context, faucetName: String = "Bee Faucet") {
         if (!hasNotificationPermission(context)) return
 
         createNotificationChannel(context)
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            putExtra("OPEN_TAB", "CLAIM")
+            putExtra("OPEN_TAB", "FAUCET")
         }
         val pendingIntent: PendingIntent = PendingIntent.getActivity(
             context,
@@ -92,11 +92,11 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("🐝 Honey Faucet Ready to Claim!")
-            .setContentText("Your hive is full of nectar! Solve the in-app captcha to collect your BEE tokens.")
+            .setContentTitle("🐝 $faucetName Ready to Claim!")
+            .setContentText("Your 60-second cooldown for $faucetName is complete! Tap to claim on beefaucet.org.")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("Your hive is full of nectar! Solve the quick in-app captcha verification without leaving the app to collect your BEE tokens.")
+                    .bigText("Your 60-second cooldown for $faucetName is complete! Tap to open and claim your crypto on beefaucet.org.")
             )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)

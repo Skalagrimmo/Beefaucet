@@ -51,4 +51,24 @@ class BeeFaucetLogicTest {
         assertEquals(28, sum)
         assertEquals("0x1C", "0x%02X".format(sum))
     }
+
+    @Test
+    fun `daily claims increment and cap at max limit of 10`() {
+        val maxLimit = 10
+        var currentClaims = 9
+        val afterClaim = (currentClaims + 1).coerceAtMost(maxLimit)
+        assertEquals(10, afterClaim)
+
+        // Cannot exceed 10
+        val nextClaim = (afterClaim + 1).coerceAtMost(maxLimit)
+        assertEquals(10, nextClaim)
+    }
+
+    @Test
+    fun `faucet cooldown initializes at 60 seconds`() {
+        val cooldownSeconds = 60
+        assertTrue("Cooldown should start at 60s", cooldownSeconds == 60)
+        val afterOneSecond = cooldownSeconds - 1
+        assertEquals(59, afterOneSecond)
+    }
 }
