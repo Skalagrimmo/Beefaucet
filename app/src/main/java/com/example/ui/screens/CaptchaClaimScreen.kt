@@ -81,14 +81,43 @@ private val PERF_SCRIPT = """
       if (window.__beefPerfInstalled) return;
       window.__beefPerfInstalled = true;
       const log = (msg) => console.log('[BEEF_PERF] ' + msg);
-
-      document.addEventListener('click', function(ev) {
-        const el = ev.target && ev.target.closest ? ev.target.closest('button,input[type="submit"],a') : null;
-        if (!el) return;
-        const label = (el.innerText || el.value || el.getAttribute('aria-label') || '').trim().replace(/\s+/g, ' ').slice(0, 80);
-        if (/collect|claim/i.test(label)) {
-          log('CLAIM_CLICK perf=' + Math.round(performance.now()) + 'ms label=' + label);
+      const safePath = (raw) => {
+        try {
+          const u = new URL(raw || location.href, location.href);
+          return u.origin + u.pathname;
+        } catch (_) {
+          return '<unknown>';
         }
+      };
+      const targetInfo = (target) => {
+        const el = target && target.closest
+          ? target.closest('button,input[type="submit"],input[type="button"],a,[role="button"]')
+          : null;
+        if (!el) return null;
+        const type = (el.getAttribute('type') || el.tagName || 'unknown').toLowerCase();
+        const inForm = !!(el.form || (el.closest && el.closest('form')));
+        return { type: type, inForm: inForm };
+      };
+
+      // Capture the physical interaction without depending on the button's text.
+      document.addEventListener('pointerdown', function(ev) {
+        const info = targetInfo(ev.target);
+        if (!info) return;
+        log('ACTION_POINTER perf=' + Math.round(performance.now()) + 'ms type=' + info.type + ' form=' + info.inForm);
+      }, true);
+
+      // A form submit is the strongest signal for a classic faucet claim/login action.
+      document.addEventListener('submit', function(ev) {
+        const form = ev.target;
+        const method = ((form && form.method) || 'get').toUpperCase();
+        const action = safePath(form && form.action ? form.action : location.href);
+        log('FORM_SUBMIT perf=' + Math.round(performance.now()) + 'ms method=' + method + ' action=' + action);
+      }, true);
+
+      // If the site navigates by JS/location rather than a normal form submit, this still
+      // marks the last moment before the current document is replaced.
+      window.addEventListener('beforeunload', function() {
+        log('BEFORE_UNLOAD perf=' + Math.round(performance.now()) + 'ms');
       }, true);
 
       try {
@@ -97,12 +126,7 @@ private val PERF_SCRIPT = """
             if (e.entryType !== 'resource') return;
             if (e.initiatorType !== 'fetch' && e.initiatorType !== 'xmlhttprequest') return;
             if (e.duration < 300) return;
-            let safe = e.name;
-            try {
-              const u = new URL(e.name, location.href);
-              safe = u.origin + u.pathname;
-            } catch (_) {}
-            log('NET ' + e.initiatorType + ' start=' + Math.round(e.startTime) + 'ms duration=' + Math.round(e.duration) + 'ms ' + safe);
+            log('NET ' + e.initiatorType + ' start=' + Math.round(e.startTime) + 'ms duration=' + Math.round(e.duration) + 'ms ' + safePath(e.name));
           });
         });
         observer.observe({entryTypes: ['resource']});
@@ -133,7 +157,11 @@ fun CaptchaClaimScreen(
     // Non-Compose timing holders: updating these must not trigger recomposition.
     val pageStartElapsedMs = remember { longArrayOf(0L) }
     val pageFinishElapsedMs = remember { longArrayOf(0L) }
-    val lastClaimClickElapsedMs = remember { longArrayOf(0L) }
+    val lastActionElapsedMs = remember { longArrayOf(0L) }
+    val lastSubmitElapsedMs = remember { longArrayOf(0L) }
+    val lastBeforeUnloadElapsedMs = remember { longArrayOf(0L) }
+    val activeSubmitElapsedMs = remember { longArrayOf(0L) }
+    val activeActionElapsedMs = remember { longArrayOf(0L) }
     val lastProgressBucket = remember { intArrayOf(-1) }
 
     // Hardware/gesture back press navigates webview history or goes back home
@@ -364,16 +392,33 @@ fun CaptchaClaimScreen(
                                 val now = SystemClock.elapsedRealtime()
                                 pageStartElapsedMs[0] = now
                                 lastProgressBucket[0] = -1
-                                val clickAt = lastClaimClickElapsedMs[0]
-                                if (clickAt > 0L) {
-                                    val clickToNav = now - clickAt
-                                    if (clickToNav in 0..30_000) {
-                                        Log.i(PERF_TAG, "CLAIM_TO_NAV elapsed=${clickToNav}ms url=${safePerfUrl(url)}")
-                                    } else {
-                                        Log.d(PERF_TAG, "CLAIM_TO_NAV ignored elapsed=${clickToNav}ms")
+                                val actionAt = lastActionElapsedMs[0]
+                                val submitAt = lastSubmitElapsedMs[0]
+                                val unloadAt = lastBeforeUnloadElapsedMs[0]
+
+                                if (actionAt > 0L) {
+                                    val actionToNav = now - actionAt
+                                    if (actionToNav in 0..30_000) {
+                                        Log.i(PERF_TAG, "ACTION_TO_NAV elapsed=${actionToNav}ms url=${safePerfUrl(url)}")
+                                        activeActionElapsedMs[0] = actionAt
                                     }
-                                    lastClaimClickElapsedMs[0] = 0L
                                 }
+                                if (submitAt > 0L) {
+                                    val submitToNav = now - submitAt
+                                    if (submitToNav in 0..30_000) {
+                                        Log.i(PERF_TAG, "SUBMIT_TO_NAV elapsed=${submitToNav}ms url=${safePerfUrl(url)}")
+                                        activeSubmitElapsedMs[0] = submitAt
+                                    }
+                                }
+                                if (unloadAt > 0L) {
+                                    val unloadToNav = now - unloadAt
+                                    if (unloadToNav in 0..30_000) {
+                                        Log.i(PERF_TAG, "UNLOAD_TO_NAV elapsed=${unloadToNav}ms url=${safePerfUrl(url)}")
+                                    }
+                                }
+                                lastActionElapsedMs[0] = 0L
+                                lastSubmitElapsedMs[0] = 0L
+                                lastBeforeUnloadElapsedMs[0] = 0L
                                 Log.i(PERF_TAG, "PAGE_START url=${safePerfUrl(url)}")
                             }
 
@@ -385,6 +430,17 @@ fun CaptchaClaimScreen(
                                 } else 0L
                                 pageFinishElapsedMs[0] = SystemClock.elapsedRealtime()
                                 Log.i(PERF_TAG, "PAGE_FINISH elapsed=${elapsed}ms url=${safePerfUrl(url)}")
+                                val finishNow = SystemClock.elapsedRealtime()
+                                val submitAt = activeSubmitElapsedMs[0]
+                                if (submitAt > 0L && finishNow >= submitAt) {
+                                    Log.i(PERF_TAG, "SUBMIT_TO_FINISH elapsed=${finishNow - submitAt}ms url=${safePerfUrl(url)}")
+                                }
+                                val actionAt = activeActionElapsedMs[0]
+                                if (actionAt > 0L && finishNow >= actionAt) {
+                                    Log.i(PERF_TAG, "ACTION_TO_FINISH elapsed=${finishNow - actionAt}ms url=${safePerfUrl(url)}")
+                                }
+                                activeSubmitElapsedMs[0] = 0L
+                                activeActionElapsedMs[0] = 0L
                                 view?.evaluateJavascript(PERF_SCRIPT, null)
                             }
 
@@ -454,9 +510,20 @@ fun CaptchaClaimScreen(
                                 val message = consoleMessage?.message().orEmpty()
                                 if (message.startsWith("[BEEF_PERF]")) {
                                     val perfMessage = message.removePrefix("[BEEF_PERF]").trim()
-                                    if (perfMessage.startsWith("CLAIM_CLICK")) {
-                                        lastClaimClickElapsedMs[0] = SystemClock.elapsedRealtime()
-                                        Log.i(PERF_TAG, "CLAIM_T0 native=${lastClaimClickElapsedMs[0]}ms")
+                                    val nativeNow = SystemClock.elapsedRealtime()
+                                    when {
+                                        perfMessage.startsWith("ACTION_POINTER") -> {
+                                            lastActionElapsedMs[0] = nativeNow
+                                            Log.i(PERF_TAG, "ACTION_T0 native=${nativeNow}ms")
+                                        }
+                                        perfMessage.startsWith("FORM_SUBMIT") -> {
+                                            lastSubmitElapsedMs[0] = nativeNow
+                                            Log.i(PERF_TAG, "SUBMIT_T0 native=${nativeNow}ms")
+                                        }
+                                        perfMessage.startsWith("BEFORE_UNLOAD") -> {
+                                            lastBeforeUnloadElapsedMs[0] = nativeNow
+                                            Log.i(PERF_TAG, "UNLOAD_T0 native=${nativeNow}ms")
+                                        }
                                     }
                                     Log.i(PERF_TAG, perfMessage)
                                     return true
