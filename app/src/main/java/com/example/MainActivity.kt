@@ -3,6 +3,7 @@ package com.example
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -46,18 +47,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.remote.RpcNetwork
 import com.example.ui.screens.CaptchaClaimScreen
@@ -155,6 +157,22 @@ fun MainAppContent(
     onTogglePushNotifications: (Boolean) -> Unit,
     onSendTestNotification: (Context) -> Unit
 ) {
+    // Keep the WebView object itself alive across tab changes, but attach it to
+    // the UI only while Claim is visible. This avoids rendering a WebView through
+    // alpha/INVISIBLE layers, which can produce a blank white surface.
+    val context = LocalContext.current
+    val retainedClaimWebView = remember { WebView(context) }
+
+    DisposableEffect(retainedClaimWebView) {
+        onDispose {
+            retainedClaimWebView.stopLoading()
+            retainedClaimWebView.webChromeClient = null
+            retainedClaimWebView.webViewClient = android.webkit.WebViewClient()
+            retainedClaimWebView.removeAllViews()
+            retainedClaimWebView.destroy()
+        }
+    }
+
     val navItems = listOf(
         NavItem("FAUCET", "Faucets", Icons.Filled.Language, Icons.Outlined.Language, "nav_faucet"),
         NavItem("CLAIM", "Claim", Icons.Filled.Security, Icons.Outlined.Security, "nav_claim"),
@@ -270,24 +288,16 @@ fun MainAppContent(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            val claimActive = state.currentTab == "CLAIM"
-
-            // Keep Claim in the composition permanently. Hiding it instead of removing it
-            // preserves the WebView instance, page DOM, JS state, cookies and history.
-            CaptchaClaimScreen(
-                state = state,
-                onClaimed = onUserClaimed,
-                onNavigateToHome = { onSelectTab("FAUCET") },
-                isActive = claimActive,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .alpha(if (claimActive) 1f else 0f)
-                    .zIndex(if (claimActive) 1f else 0f)
-            )
-
-            // The lightweight native tabs may still be recreated/cross-faded. They sit above
-            // the hidden Claim screen, so the retained WebView cannot intercept their input.
-            if (!claimActive) {
+            if (state.currentTab == "CLAIM") {
+                // Do not Crossfade/alpha-animate AndroidView(WebView). Reattach the
+                // retained WebView directly so it keeps its current page/session.
+                CaptchaClaimScreen(
+                    state = state,
+                    retainedWebView = retainedClaimWebView,
+                    onClaimed = onUserClaimed,
+                    onNavigateToHome = { onSelectTab("FAUCET") }
+                )
+            } else {
                 Crossfade(targetState = state.currentTab, label = "TabSwitch") { currentTab ->
                     when (currentTab) {
                         "FAUCET" -> FaucetHomeScreen(
