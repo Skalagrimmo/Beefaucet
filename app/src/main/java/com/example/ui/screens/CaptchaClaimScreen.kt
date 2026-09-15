@@ -3,11 +3,15 @@ package com.example.ui.screens
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.SystemClock
+import android.util.Log
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -68,6 +72,48 @@ import com.example.ui.theme.HoneyGoldPrimary
 import com.example.ui.theme.HoneyMintTertiary
 import com.example.ui.viewmodel.FaucetUiState
 
+private const val PERF_TAG = "BeefaucetPerf"
+
+private fun safePerfUrl(raw: String?): String = raw?.substringBefore('?')?.substringBefore('#') ?: "<null>"
+
+private val PERF_SCRIPT = """
+    (function() {
+      if (window.__beefPerfInstalled) return;
+      window.__beefPerfInstalled = true;
+      const log = (msg) => console.log('[BEEF_PERF] ' + msg);
+
+      document.addEventListener('click', function(ev) {
+        const el = ev.target && ev.target.closest ? ev.target.closest('button,input[type="submit"],a') : null;
+        if (!el) return;
+        const label = (el.innerText || el.value || el.getAttribute('aria-label') || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+        if (/collect|claim/i.test(label)) {
+          log('CLAIM_CLICK perf=' + Math.round(performance.now()) + 'ms label=' + label);
+        }
+      }, true);
+
+      try {
+        const observer = new PerformanceObserver(function(list) {
+          list.getEntries().forEach(function(e) {
+            if (e.entryType !== 'resource') return;
+            if (e.initiatorType !== 'fetch' && e.initiatorType !== 'xmlhttprequest') return;
+            if (e.duration < 300) return;
+            let safe = e.name;
+            try {
+              const u = new URL(e.name, location.href);
+              safe = u.origin + u.pathname;
+            } catch (_) {}
+            log('NET ' + e.initiatorType + ' start=' + Math.round(e.startTime) + 'ms duration=' + Math.round(e.duration) + 'ms ' + safe);
+          });
+        });
+        observer.observe({entryTypes: ['resource']});
+      } catch (e) {
+        log('PerformanceObserver unavailable');
+      }
+
+      log('OBSERVER_READY ' + location.origin + location.pathname);
+    })();
+""".trimIndent()
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun CaptchaClaimScreen(
@@ -83,6 +129,10 @@ fun CaptchaClaimScreen(
     var webProgress by remember { mutableFloatStateOf(0f) }
     var isLoading by remember { mutableStateOf(true) }
     var webError by remember { mutableStateOf<String?>(null) }
+
+    // Non-Compose timing holders: updating these must not trigger recomposition.
+    val pageStartElapsedMs = remember { longArrayOf(0L) }
+    val lastProgressBucket = remember { intArrayOf(-1) }
 
     // Hardware/gesture back press navigates webview history or goes back home
     BackHandler {
@@ -276,6 +326,7 @@ fun CaptchaClaimScreen(
                     (retainedWebView.parent as? ViewGroup)?.removeView(retainedWebView)
 
                     retainedWebView.apply {
+                        Log.i(PERF_TAG, "ATTACH faucet=${currentFaucet.id} currentUrl=${safePerfUrl(url)}")
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
@@ -308,11 +359,19 @@ fun CaptchaClaimScreen(
                                 super.onPageStarted(view, url, favicon)
                                 webError = null
                                 isLoading = true
+                                pageStartElapsedMs[0] = SystemClock.elapsedRealtime()
+                                lastProgressBucket[0] = -1
+                                Log.i(PERF_TAG, "PAGE_START url=${safePerfUrl(url)}")
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 isLoading = false
+                                val elapsed = if (pageStartElapsedMs[0] > 0L) {
+                                    SystemClock.elapsedRealtime() - pageStartElapsedMs[0]
+                                } else 0L
+                                Log.i(PERF_TAG, "PAGE_FINISH elapsed=${elapsed}ms url=${safePerfUrl(url)}")
+                                view?.evaluateJavascript(PERF_SCRIPT, null)
                             }
 
                             override fun onReceivedError(
@@ -324,6 +383,21 @@ fun CaptchaClaimScreen(
                                 if (request?.isForMainFrame == true) {
                                     webError = "WebView error ${error?.errorCode}: ${error?.description ?: "unknown error"}"
                                     isLoading = false
+                                    val elapsed = if (pageStartElapsedMs[0] > 0L) {
+                                        SystemClock.elapsedRealtime() - pageStartElapsedMs[0]
+                                    } else 0L
+                                    Log.e(PERF_TAG, "MAIN_ERROR elapsed=${elapsed}ms code=${error?.errorCode} desc=${error?.description}")
+                                }
+                            }
+
+                            override fun onReceivedHttpError(
+                                view: WebView?,
+                                request: WebResourceRequest?,
+                                errorResponse: WebResourceResponse?
+                            ) {
+                                super.onReceivedHttpError(view, request, errorResponse)
+                                if (request?.isForMainFrame == true) {
+                                    Log.w(PERF_TAG, "HTTP_ERROR status=${errorResponse?.statusCode} url=${safePerfUrl(request.url?.toString())}")
                                 }
                             }
                         }
@@ -331,7 +405,32 @@ fun CaptchaClaimScreen(
                         webChromeClient = object : WebChromeClient() {
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                 webProgress = (newProgress / 100f).coerceIn(0f, 1f)
+                                val bucket = when {
+                                    newProgress >= 100 -> 100
+                                    newProgress >= 90 -> 90
+                                    newProgress >= 75 -> 75
+                                    newProgress >= 50 -> 50
+                                    newProgress >= 25 -> 25
+                                    newProgress >= 10 -> 10
+                                    else -> 0
+                                }
+                                if (bucket > lastProgressBucket[0]) {
+                                    lastProgressBucket[0] = bucket
+                                    val elapsed = if (pageStartElapsedMs[0] > 0L) {
+                                        SystemClock.elapsedRealtime() - pageStartElapsedMs[0]
+                                    } else 0L
+                                    Log.d(PERF_TAG, "PROGRESS ${bucket}% elapsed=${elapsed}ms")
+                                }
                                 if (newProgress >= 100) isLoading = false
+                            }
+
+                            override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                                val message = consoleMessage?.message().orEmpty()
+                                if (message.startsWith("[BEEF_PERF]")) {
+                                    Log.i(PERF_TAG, message.removePrefix("[BEEF_PERF]").trim())
+                                    return true
+                                }
+                                return super.onConsoleMessage(consoleMessage)
                             }
                         }
 
@@ -343,6 +442,7 @@ fun CaptchaClaimScreen(
                             webError = null
                             webProgress = 0f
                             isLoading = true
+                            Log.i(PERF_TAG, "LOAD reason=initial_or_empty faucet=${currentFaucet.id} url=${currentFaucet.url}")
                             loadUrl(currentFaucet.url)
                         }
                     }
@@ -355,6 +455,7 @@ fun CaptchaClaimScreen(
                         webError = null
                         webProgress = 0f
                         isLoading = true
+                        Log.i(PERF_TAG, "LOAD reason=faucet_switch faucet=${currentFaucet.id} url=${currentFaucet.url}")
                         webView.loadUrl(currentFaucet.url)
                     }
                 }
