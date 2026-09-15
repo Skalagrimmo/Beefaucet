@@ -17,11 +17,6 @@ data class FaucetSettingsEntity(
     val nextClaimEpochMs: Long = 0L,
     val reminderIntervalMinutes: Int = 5,
     val pushNotificationEnabled: Boolean = true,
-    val autoWithdrawalEnabled: Boolean = false,
-    // TODO: User-defined threshold, no hardcoded default
-    val autoWithdrawalThreshold: Double = 0.0,
-    // TODO: Real user-provided payout destination address required
-    val autoWithdrawalDestination: String = "",
     val soundEnabled: Boolean = true,
     val vibrationEnabled: Boolean = true
 )

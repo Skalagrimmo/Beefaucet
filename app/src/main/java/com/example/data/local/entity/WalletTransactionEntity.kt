@@ -8,7 +8,7 @@ data class WalletTransactionEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val timestamp: Long = System.currentTimeMillis(),
-    val type: String, // "FAUCET_CLAIM", "AUTO_WITHDRAWAL", "MANUAL_WITHDRAWAL"
+    val type: String, // "FAUCET_CLAIM"
     val amount: Double,
     val toAddress: String,
     // TODO: Real transaction hash returned by blockchain RPC/node upon network broadcast
