@@ -1,6 +1,0 @@
-{
-  "name": "Bee Faucet",
-  "description": "Bee crypto faucet reminder with smooth in-app captcha verification, push notifications, and secure integrated wallet with automated withdrawals.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
