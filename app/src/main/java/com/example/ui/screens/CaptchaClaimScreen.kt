@@ -132,6 +132,8 @@ fun CaptchaClaimScreen(
 
     // Non-Compose timing holders: updating these must not trigger recomposition.
     val pageStartElapsedMs = remember { longArrayOf(0L) }
+    val pageFinishElapsedMs = remember { longArrayOf(0L) }
+    val lastClaimClickElapsedMs = remember { longArrayOf(0L) }
     val lastProgressBucket = remember { intArrayOf(-1) }
 
     // Hardware/gesture back press navigates webview history or goes back home
@@ -359,8 +361,19 @@ fun CaptchaClaimScreen(
                                 super.onPageStarted(view, url, favicon)
                                 webError = null
                                 isLoading = true
-                                pageStartElapsedMs[0] = SystemClock.elapsedRealtime()
+                                val now = SystemClock.elapsedRealtime()
+                                pageStartElapsedMs[0] = now
                                 lastProgressBucket[0] = -1
+                                val clickAt = lastClaimClickElapsedMs[0]
+                                if (clickAt > 0L) {
+                                    val clickToNav = now - clickAt
+                                    if (clickToNav in 0..30_000) {
+                                        Log.i(PERF_TAG, "CLAIM_TO_NAV elapsed=${clickToNav}ms url=${safePerfUrl(url)}")
+                                    } else {
+                                        Log.d(PERF_TAG, "CLAIM_TO_NAV ignored elapsed=${clickToNav}ms")
+                                    }
+                                    lastClaimClickElapsedMs[0] = 0L
+                                }
                                 Log.i(PERF_TAG, "PAGE_START url=${safePerfUrl(url)}")
                             }
 
@@ -370,6 +383,7 @@ fun CaptchaClaimScreen(
                                 val elapsed = if (pageStartElapsedMs[0] > 0L) {
                                     SystemClock.elapsedRealtime() - pageStartElapsedMs[0]
                                 } else 0L
+                                pageFinishElapsedMs[0] = SystemClock.elapsedRealtime()
                                 Log.i(PERF_TAG, "PAGE_FINISH elapsed=${elapsed}ms url=${safePerfUrl(url)}")
                                 view?.evaluateJavascript(PERF_SCRIPT, null)
                             }
@@ -396,9 +410,21 @@ fun CaptchaClaimScreen(
                                 errorResponse: WebResourceResponse?
                             ) {
                                 super.onReceivedHttpError(view, request, errorResponse)
-                                if (request?.isForMainFrame == true) {
-                                    Log.w(PERF_TAG, "HTTP_ERROR status=${errorResponse?.statusCode} url=${safePerfUrl(request.url?.toString())}")
-                                }
+                                val now = SystemClock.elapsedRealtime()
+                                val sinceFinish = if (pageFinishElapsedMs[0] > 0L) {
+                                    now - pageFinishElapsedMs[0]
+                                } else -1L
+                                Log.w(
+                                    PERF_TAG,
+                                    "HTTP_ERROR status=${errorResponse?.statusCode} " +
+                                        "mainFrame=${request?.isForMainFrame} " +
+                                        "method=${request?.method ?: "?"} " +
+                                        "gesture=${request?.hasGesture() ?: false} " +
+                                        "redirect=${request?.isRedirect ?: false} " +
+                                        "sinceFinish=${sinceFinish}ms " +
+                                        "reason=${errorResponse?.reasonPhrase ?: "?"} " +
+                                        "url=${safePerfUrl(request?.url?.toString())}"
+                                )
                             }
                         }
 
@@ -427,7 +453,12 @@ fun CaptchaClaimScreen(
                             override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
                                 val message = consoleMessage?.message().orEmpty()
                                 if (message.startsWith("[BEEF_PERF]")) {
-                                    Log.i(PERF_TAG, message.removePrefix("[BEEF_PERF]").trim())
+                                    val perfMessage = message.removePrefix("[BEEF_PERF]").trim()
+                                    if (perfMessage.startsWith("CLAIM_CLICK")) {
+                                        lastClaimClickElapsedMs[0] = SystemClock.elapsedRealtime()
+                                        Log.i(PERF_TAG, "CLAIM_T0 native=${lastClaimClickElapsedMs[0]}ms")
+                                    }
+                                    Log.i(PERF_TAG, perfMessage)
                                     return true
                                 }
                                 return super.onConsoleMessage(consoleMessage)
