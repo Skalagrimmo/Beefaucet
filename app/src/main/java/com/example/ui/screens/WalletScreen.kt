@@ -3,7 +3,6 @@ package com.example.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -27,22 +26,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.NorthEast
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SouthWest
-import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -51,7 +48,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,6 +76,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+enum class WalletSection {
+    EXTERNAL_ON_CHAIN,
+    FAUCETPAY_WEBVIEW
+}
+
 @Composable
 fun WalletScreen(
     state: FaucetUiState,
@@ -87,6 +88,135 @@ fun WalletScreen(
     onSelectNetwork: (RpcNetwork) -> Unit,
     onRefreshBalance: () -> Unit,
     onRefreshPrices: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var selectedSection by remember { mutableStateOf(WalletSection.EXTERNAL_ON_CHAIN) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // Dual-tab switcher between External On-Chain and FaucetPay Wallet
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF191C26))
+                    .border(1.dp, Color(0xFF282D3D), RoundedCornerShape(14.dp))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Section 1: Зовнішній гаманець (після виведення з FaucetPay)
+                val isExternal = selectedSection == WalletSection.EXTERNAL_ON_CHAIN
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isExternal) HoneyGoldPrimary else Color.Transparent)
+                        .clickable { selectedSection = WalletSection.EXTERNAL_ON_CHAIN }
+                        .padding(vertical = 8.dp, horizontal = 6.dp)
+                        .testTag("tab_external_wallet"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.AccountBalanceWallet,
+                                contentDescription = null,
+                                tint = if (isExternal) Color.Black else HoneyGoldLight,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Зовнішній гаманець",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isExternal) Color.Black else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Text(
+                            text = "(після виведення з FaucetPay)",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isExternal) Color(0xFF242424) else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // Section 2: FaucetPay Wallet
+                val isFaucetPay = selectedSection == WalletSection.FAUCETPAY_WEBVIEW
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isFaucetPay) HoneyAccentCyan else Color.Transparent)
+                        .clickable { selectedSection = WalletSection.FAUCETPAY_WEBVIEW }
+                        .padding(vertical = 8.dp, horizontal = 6.dp)
+                        .testTag("tab_faucetpay_wallet"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Language,
+                                contentDescription = null,
+                                tint = if (isFaucetPay) Color.Black else HoneyAccentCyan,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "FaucetPay Wallet",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isFaucetPay) Color.Black else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Text(
+                            text = "(faucetpay.io/wallet)",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isFaucetPay) Color(0xFF102830) else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        // Render Active Section
+        when (selectedSection) {
+            WalletSection.EXTERNAL_ON_CHAIN -> {
+                ExternalWalletView(
+                    state = state,
+                    onUpdateAddress = onUpdateAddress,
+                    onSelectNetwork = onSelectNetwork,
+                    onRefreshBalance = onRefreshBalance,
+                    onRefreshPrices = onRefreshPrices,
+                    onSwitchToFaucetPay = { selectedSection = WalletSection.FAUCETPAY_WEBVIEW }
+                )
+            }
+            WalletSection.FAUCETPAY_WEBVIEW -> {
+                FaucetPayWalletScreen(
+                    onBackPressed = { selectedSection = WalletSection.EXTERNAL_ON_CHAIN }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExternalWalletView(
+    state: FaucetUiState,
+    onUpdateAddress: (String) -> Unit,
+    onSelectNetwork: (RpcNetwork) -> Unit,
+    onRefreshBalance: () -> Unit,
+    onRefreshPrices: () -> Unit,
+    onSwitchToFaucetPay: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -111,22 +241,85 @@ fun WalletScreen(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Distinct Screen Title & Subtitle
         item {
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Wallet & On-Chain Balance",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "Real Web3j RPC node queries & CoinGecko live market pricing",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column {
+                Text(
+                    text = "Зовнішній гаманець (після виведення з FaucetPay)",
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = "Ончейн баланс через Web3j RPC вузли та CoinGecko котирування. Фіксує реальні кошти після їх виведення з мікрогаманця FaucetPay на власну адресу.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 16.sp
+                )
+            }
         }
 
-        // On-Chain RPC Balance Card
+        // Explanatory Info Card: External Wallet vs FaucetPay
+        item {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF161E28)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, HoneyAccentCyan.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "Wallet Info",
+                        tint = HoneyAccentCyan,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .padding(top = 1.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Зовнішній ончейн-гаманець vs FaucetPay",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = HoneyAccentCyan
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = "Цей розділ опитує блокчейн через Web3j для вашої вказаної адреси (BNB Smart Chain, Ethereum, Polygon). Кошти з'являються тут лише після того, як ви здійсните виведення з мікрогаманця FaucetPay на цю адресу.",
+                            fontSize = 11.5.sp,
+                            color = Color(0xFFB0C4DE),
+                            lineHeight = 15.sp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(HoneyAccentCyan.copy(alpha = 0.15f))
+                                .clickable { onSwitchToFaucetPay() }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Перевірити внутрішній баланс FaucetPay ➔",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = HoneyAccentCyan
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // On-Chain RPC Balance Card (Clearly Labeled)
         item {
             Card(
                 shape = RoundedCornerShape(22.dp),
@@ -152,7 +345,7 @@ fun WalletScreen(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "EVM Network:",
+                                text = "Ончейн мережа:",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -172,7 +365,7 @@ fun WalletScreen(
                             } else {
                                 Icon(
                                     imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Refresh On-chain Balance",
+                                    contentDescription = "Оновити ончейн баланс",
                                     tint = HoneyGoldLight
                                 )
                             }
@@ -215,7 +408,7 @@ fun WalletScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = "ON-CHAIN RPC BALANCE (${state.selectedRpcNetwork.name.uppercase()})",
+                        text = "ОНЧЕЙН RPC БАЛАНС (ПІСЛЯ ВИВЕДЕННЯ З FAUCETPAY)",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -265,13 +458,13 @@ fun WalletScreen(
                             )
                         } else if (state.isPriceLoading) {
                             Text(
-                                text = "Loading CoinGecko market price...",
+                                text = "Оновлення котирування CoinGecko...",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         } else {
                             Text(
-                                text = "CoinGecko price feed active",
+                                text = "CoinGecko price feed активний",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -291,7 +484,7 @@ fun WalletScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ErrorOutline,
-                                contentDescription = "Error",
+                                contentDescription = "Помилка",
                                 tint = Color(0xFFFF6E6E),
                                 modifier = Modifier.size(16.dp)
                             )
@@ -306,7 +499,7 @@ fun WalletScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Buttons: Refresh RPC & View QR
+                    // Action buttons: Refresh RPC & View QR
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -322,12 +515,12 @@ fun WalletScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
-                                contentDescription = "RPC Query",
+                                contentDescription = "Запит RPC",
                                 tint = Color.Black,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Query RPC", color = Color.Black, fontWeight = FontWeight.Bold)
+                            Text("Запит RPC", color = Color.Black, fontWeight = FontWeight.Bold)
                         }
 
                         OutlinedButton(
@@ -337,12 +530,12 @@ fun WalletScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.QrCode,
-                                contentDescription = "Receive QR",
+                                contentDescription = "QR-код",
                                 tint = HoneyGoldLight,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Receive QR", color = HoneyGoldLight)
+                            Text("QR-код адреси", color = HoneyGoldLight)
                         }
                     }
                 }
@@ -371,13 +564,13 @@ fun WalletScreen(
                     ) {
                         Column {
                             Text(
-                                text = "Recipient Wallet Address",
-                                fontSize = 15.sp,
+                                text = "Особиста адреса для виведення з FaucetPay",
+                                fontSize = 14.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Rewards are automatically sent to your personal address",
+                                text = "Вказуйте цю адресу при замовленні виведення у FaucetPay",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -389,7 +582,7 @@ fun WalletScreen(
                         }) {
                             Icon(
                                 imageVector = Icons.Default.Edit,
-                                contentDescription = "Edit Address",
+                                contentDescription = "Редагувати адресу",
                                 tint = HoneyGoldPrimary,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -409,7 +602,7 @@ fun WalletScreen(
                                         context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     val clip = ClipData.newPlainText("Wallet Address", state.settings.walletAddress)
                                     clipboard.setPrimaryClip(clip)
-                                    Toast.makeText(context, "Address copied to clipboard!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Адресу скопійовано в буфер!", Toast.LENGTH_SHORT).show()
                                 }
                                 .padding(12.dp)
                         ) {
@@ -430,7 +623,7 @@ fun WalletScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Icon(
                                     imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = "Copy Address",
+                                    contentDescription = "Копіювати адресу",
                                     tint = HoneyGoldPrimary,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -450,7 +643,7 @@ fun WalletScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "+ Click to set your public EVM address (0x...)",
+                                text = "+ Натисніть, щоб ввести власну EVM-адресу (0x...)",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = HoneyGoldPrimary
@@ -461,7 +654,7 @@ fun WalletScreen(
             }
         }
 
-        // Faucet Claim / Transaction Records
+        // Faucet Reward History
         item {
             Row(
                 modifier = Modifier
@@ -471,13 +664,13 @@ fun WalletScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Faucet Reward History",
+                    text = "Історія нарахувань кранів",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "${state.transactions.size} claims",
+                    text = "${state.transactions.size} записів",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -493,7 +686,7 @@ fun WalletScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No faucet claims recorded yet",
+                        text = "Записів про виплати кранів поки немає",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -528,7 +721,7 @@ fun WalletScreen(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.SouthWest,
-                                    contentDescription = "Reward",
+                                    contentDescription = "Винагорода",
                                     tint = HoneyMintTertiary,
                                     modifier = Modifier.size(20.dp)
                                 )
@@ -536,7 +729,7 @@ fun WalletScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "Faucet Drop Reward",
+                                    text = "Нарахування Faucet Drop",
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -578,11 +771,11 @@ fun WalletScreen(
     if (showEditAddressDialog) {
         AlertDialog(
             onDismissRequest = { showEditAddressDialog = false },
-            title = { Text("Set Wallet Address", fontWeight = FontWeight.Bold) },
+            title = { Text("Вказати адресу зовнішнього гаманця", fontWeight = FontWeight.Bold) },
             text = {
                 Column {
                     Text(
-                        text = "Enter your personal external EVM address (BNB Smart Chain, Ethereum, Polygon):",
+                        text = "Введіть вашу особисту EVM-адресу для ончейн-запитів та отримання коштів після виведення з FaucetPay:",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -590,7 +783,7 @@ fun WalletScreen(
                     OutlinedTextField(
                         value = tempAddressInput,
                         onValueChange = { tempAddressInput = it },
-                        label = { Text("Address (0x...)") },
+                        label = { Text("Адреса (0x...)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -603,19 +796,19 @@ fun WalletScreen(
                         if (clean.startsWith("0x") && clean.length == 42) {
                             onUpdateAddress(clean)
                             showEditAddressDialog = false
-                            Toast.makeText(context, "Wallet address updated!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Адресу оновлено!", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "Must be a valid 42-character 0x EVM address", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Вкажіть коректну 42-значну 0x EVM-адресу", Toast.LENGTH_SHORT).show()
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = HoneyGoldPrimary)
                 ) {
-                    Text("Save Address", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Text("Зберегти адресу", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showEditAddressDialog = false }) {
-                    Text("Cancel")
+                    Text("Скасувати")
                 }
             }
         )
@@ -629,7 +822,7 @@ fun WalletScreen(
 
         AlertDialog(
             onDismissRequest = { showQrDialog = false },
-            title = { Text("Receive Address QR Code", fontWeight = FontWeight.Bold) },
+            title = { Text("QR-код зовнішньої адреси", fontWeight = FontWeight.Bold) },
             text = {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -647,13 +840,13 @@ fun WalletScreen(
                             ) {
                                 Image(
                                     bitmap = qrBitmap.asImageBitmap(),
-                                    contentDescription = "Wallet Address QR Code",
+                                    contentDescription = "QR-код адреси гаманця",
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
                         } else {
                             Text(
-                                text = "Unable to generate QR code bitmap",
+                                text = "Не вдалося згенерувати QR-код",
                                 color = MaterialTheme.colorScheme.error,
                                 fontSize = 12.sp
                             )
@@ -670,7 +863,7 @@ fun WalletScreen(
                         )
                     } else {
                         Text(
-                            text = "No wallet address entered yet. Please enter your address above to view your receive QR code.",
+                            text = "Адресу ще не вказано. Будь ласка, збережіть вашу EVM-адресу для перегляду QR-коду.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -686,18 +879,18 @@ fun WalletScreen(
                                 context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             val clip = ClipData.newPlainText("Wallet Address", state.settings.walletAddress)
                             clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Address copied!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Адресу скопійовано!", Toast.LENGTH_SHORT).show()
                             showQrDialog = false
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = HoneyGoldPrimary)
                     ) {
-                        Text("Copy Address", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text("Скопіювати адресу", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showQrDialog = false }) {
-                    Text("Close")
+                    Text("Закрити")
                 }
             }
         )

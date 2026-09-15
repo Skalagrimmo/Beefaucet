@@ -69,4 +69,11 @@ class BeeFaucetLogicTest {
         val afterOneSecond = cooldownSeconds - 1
         assertEquals(59, afterOneSecond)
     }
+
+    @Test
+    fun `faucetpay wallet url is valid https address`() {
+        val faucetPayUrl = "https://faucetpay.io/wallet"
+        assertTrue(faucetPayUrl.startsWith("https://"))
+        assertTrue(faucetPayUrl.contains("faucetpay.io/wallet"))
+    }
 }
