@@ -316,11 +316,7 @@ fun FaucetPayWalletScreen(
                             builtInZoomControls = true
                             displayZoomControls = false
                             setSupportZoom(true)
-                            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                            // Standard desktop/mobile browser user-agent without "; wv"
-                            userAgentString = userAgentString
-                                .replace("; wv", "")
-                                .replace("Version/4.0 ", "")
+                            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                         }
 
                         webViewClient = object : WebViewClient() {
